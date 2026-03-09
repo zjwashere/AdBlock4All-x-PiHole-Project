@@ -1,0 +1,995 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pi-hole Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600;700&family=Syne:wght@400;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:         #0a0e1a;
+    --surface:    #0f1526;
+    --surface2:   #161d35;
+    --border:     #1e2a4a;
+    --green:      #00ff88;
+    --green-dim:  #00ff8818;
+    --red:        #ff4455;
+    --red-dim:    #ff445518;
+    --blue:       #4488ff;
+    --blue-dim:   #4488ff18;
+    --yellow:     #ffcc44;
+    --yellow-dim: #ffcc4418;
+    --purple:     #b060ff;
+    --purple-dim: #b060ff18;
+    --text:       #c8d8f0;
+    --text-dim:   #5a7090;
+    --font-mono:  'JetBrains Mono', monospace;
+    --font-display: 'Syne', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-mono);
+    min-height: 100vh;
+    overflow-x: hidden;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(0,255,136,0.013) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(0,255,136,0.013) 1px, transparent 1px);
+    background-size: 40px 40px;
+    pointer-events: none; z-index: 0;
+  }
+
+  .app {
+    position: relative; z-index: 1;
+    max-width: 1400px; margin: 0 auto;
+    padding: 16px;
+  }
+  @media(min-width:600px){ .app { padding: 24px; } }
+
+  /* ── Section labels ──────────────────────────────────────────────────────── */
+  .section-label {
+    font-size: 10px; text-transform: uppercase; letter-spacing: 3px;
+    color: var(--text-dim); margin-bottom: 12px; margin-top: 24px;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .section-label::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+  .section-label:first-of-type { margin-top: 0; }
+
+  /* ── Header ──────────────────────────────────────────────────────────────── */
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 20px; padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    gap: 8px;
+  }
+
+  .logo { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  .logo-icon {
+    width: 38px; height: 38px; flex-shrink: 0;
+    background: var(--green-dim); border: 1px solid var(--green);
+    border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 18px;
+  }
+  .logo h1 { font-family: var(--font-display); font-size: 18px; font-weight: 800; color: #fff; letter-spacing: -0.5px; white-space: nowrap; }
+  .logo span { font-size: 9px; color: var(--text-dim); font-weight: 300; display: block; letter-spacing: 2px; text-transform: uppercase; }
+  @media(min-width:480px){ .logo h1 { font-size: 22px; } .logo span { font-size: 11px; } }
+
+  .header-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+  /* hide "last updated" text on very small screens */
+  .last-updated { font-size: 11px; color: var(--text-dim); display: none; }
+  @media(min-width:520px){ .last-updated { display: block; } }
+
+  .refresh-ring { position: relative; width: 34px; height: 34px; cursor: pointer; flex-shrink: 0; }
+  .refresh-ring svg { transform: rotate(-90deg); }
+  .refresh-ring circle.track { fill: none; stroke: var(--border); stroke-width: 3; }
+  .refresh-ring circle.prog  {
+    fill: none; stroke: var(--green); stroke-width: 3;
+    stroke-dasharray: 88; stroke-dashoffset: 88;
+    transition: stroke-dashoffset 1s linear; stroke-linecap: round;
+  }
+  .refresh-ring .ring-icon { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 14px; }
+
+  .status-pill {
+    display: flex; align-items: center; gap: 6px;
+    padding: 5px 10px; border-radius: 20px;
+    font-size: 11px; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;
+    border: 1px solid; transition: all 0.3s; white-space: nowrap;
+  }
+  @media(min-width:480px){ .status-pill { padding: 6px 14px; font-size: 12px; gap: 8px; } }
+  .status-pill.online  { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+  .status-pill.offline { background: var(--red-dim);   border-color: var(--red);   color: var(--red); }
+  .status-pill.loading { background: var(--blue-dim);  border-color: var(--blue);  color: var(--blue); }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; animation: pulse 2s infinite; flex-shrink: 0; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.3} }
+
+  /* ── YOUR DEVICE card ────────────────────────────────────────────────────── */
+  .your-device-panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 16px;
+    margin-bottom: 16px; position: relative; overflow: hidden;
+    animation: fadeUp .45s ease both;
+  }
+  @media(min-width:600px){ .your-device-panel { padding: 20px 24px; } }
+  .your-device-panel::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--blue), var(--green));
+  }
+
+  /* Mobile: stacked layout */
+  .yd-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .yd-left { display: flex; align-items: center; gap: 12px; min-width: 0; }
+
+  .yd-avatar {
+    width: 44px; height: 44px; border-radius: 12px; flex-shrink: 0;
+    background: var(--blue-dim); border: 1px solid var(--blue);
+    display: flex; align-items: center; justify-content: center; font-size: 20px;
+  }
+  @media(min-width:600px){ .yd-avatar { width: 52px; height: 52px; font-size: 24px; } }
+
+  .yd-name {
+    font-family: var(--font-display); font-size: 16px; font-weight: 800;
+    color: #fff; line-height: 1.2; margin-bottom: 3px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 180px;
+  }
+  @media(min-width:480px){ .yd-name { font-size: 18px; max-width: 260px; } }
+  @media(min-width:700px){ .yd-name { font-size: 20px; max-width: none; } }
+  .yd-ip { font-size: 11px; color: var(--text-dim); }
+
+  .yd-rank-badge {
+    display: flex; align-items: center; justify-content: center;
+    width: 44px; height: 44px; border-radius: 12px;
+    font-size: 24px; flex-shrink: 0;
+    border: 1px solid var(--border); background: var(--surface2);
+  }
+  @media(min-width:600px){ .yd-rank-badge { width: 52px; height: 52px; font-size: 28px; } }
+
+  /* Stats row — always horizontal, scales with screen */
+  .yd-stats {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+  }
+
+  .yd-stat { text-align: center; }
+  .yd-stat-val {
+    font-family: var(--font-display); font-size: 18px; font-weight: 800;
+    color: #fff; line-height: 1;
+  }
+  @media(min-width:480px){ .yd-stat-val { font-size: 22px; } }
+  .yd-stat-val.rank-1 { color: var(--yellow); }
+  .yd-stat-val.rank-2 { color: #a0a8b8; }
+  .yd-stat-val.rank-3 { color: #cd7f32; }
+  .yd-stat-label { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.2px; margin-top: 4px; }
+  @media(min-width:480px){ .yd-stat-label { font-size: 10px; letter-spacing: 1.5px; } }
+
+  /* ── Stats grid ──────────────────────────────────────────────────────────── */
+  .stats-grid {
+    display: grid; grid-template-columns: repeat(2,1fr);
+    gap: 10px; margin-bottom: 16px;
+  }
+  @media(min-width:700px){ .stats-grid { grid-template-columns: repeat(4,1fr); gap: 16px; } }
+
+  .stat-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 14px; position: relative; overflow: hidden;
+    transition: border-color .2s, transform .2s;
+    animation: fadeUp .5s ease both;
+  }
+  @media(min-width:600px){ .stat-card { padding: 20px; } }
+  .stat-card:nth-child(2){animation-delay:.05s}
+  .stat-card:nth-child(3){animation-delay:.1s}
+  .stat-card:nth-child(4){animation-delay:.15s}
+  .stat-card:hover { border-color: var(--green); transform: translateY(-2px); }
+  .stat-card::before { content:''; position:absolute; top:0;left:0;right:0; height:2px; background:var(--accent,var(--green)); }
+  .stat-card.blocked { --accent: var(--red); }
+  .stat-card.percent { --accent: var(--yellow); }
+  .stat-card.domains { --accent: var(--blue); }
+  .stat-label { font-size:9px; color:var(--text-dim); text-transform:uppercase; letter-spacing:1.5px; margin-bottom:8px; }
+  @media(min-width:600px){ .stat-label { font-size:10px; letter-spacing:2px; margin-bottom:10px; } }
+  .stat-value { font-family:var(--font-display); font-size:24px; font-weight:800; color:#fff; line-height:1; margin-bottom:4px; }
+  @media(min-width:600px){ .stat-value { font-size:32px; } }
+  .stat-sub   { font-size:10px; color:var(--text-dim); }
+  .stat-icon  { position:absolute; top:12px; right:12px; font-size:18px; opacity:.2; }
+  @media(min-width:600px){ .stat-icon { top:18px; right:18px; font-size:22px; } }
+
+  /* ── Leaderboard ─────────────────────────────────────────────────────────── */
+  .leaderboard-panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 16px; padding: 16px;
+    margin-bottom: 16px;
+    animation: fadeUp .5s .18s ease both;
+    position: relative; overflow: hidden;
+  }
+  @media(min-width:600px){ .leaderboard-panel { padding: 24px; } }
+  .leaderboard-panel::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, var(--yellow), var(--purple), var(--red));
+  }
+
+  .lb-header {
+    display: flex; align-items: flex-start; justify-content: space-between;
+    margin-bottom: 16px; gap: 10px;
+  }
+  .lb-title {
+    display: flex; align-items: center; gap: 8px;
+    font-family: var(--font-display); font-size: 14px; font-weight: 800; color: #fff;
+  }
+  @media(min-width:480px){ .lb-title { font-size: 16px; } }
+  .lb-title .trophy { font-size: 18px; }
+  .lb-subtitle { font-size: 10px; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase; margin-top: 3px; }
+  .lb-badge {
+    font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px;
+    padding: 4px 8px; border-radius: 20px; white-space: nowrap; flex-shrink: 0;
+    background: var(--yellow-dim); border: 1px solid var(--yellow); color: var(--yellow);
+  }
+
+  /* ── Leaderboard: mobile card layout (< 560px) ───────────────────────────── */
+  /* On mobile we ditch the grid entirely and use card-style rows */
+  .lb-cols { display: none; } /* hidden on mobile, shown on tablet+ */
+  @media(min-width:560px){
+    .lb-cols {
+      display: grid;
+      grid-template-columns: 40px 1fr 110px 90px;
+      gap: 8px; align-items: center;
+      padding: 0 10px 10px;
+      font-size: 10px; color: var(--text-dim);
+      text-transform: uppercase; letter-spacing: 1.5px;
+      border-bottom: 1px solid var(--border); margin-bottom: 6px;
+    }
+    .lb-col-mac,.lb-col-rate { display: none; }
+  }
+  @media(min-width:860px){
+    .lb-cols {
+      grid-template-columns: 44px 1fr 140px 110px 110px 90px;
+    }
+    .lb-col-mac,.lb-col-rate { display: block; }
+  }
+
+  /* Mobile card row */
+  .lb-row {
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    margin-bottom: 8px;
+    transition: background .15s;
+    position: relative;
+    background: var(--surface2);
+  }
+  .lb-row:last-child { margin-bottom: 0; }
+  .lb-row.is-you { border-color: var(--blue); background: var(--blue-dim) !important; }
+  .lb-row[data-rank="1"] { border-color: #ffcc4440; background: linear-gradient(135deg,#ffcc4408,var(--surface2)); }
+  .lb-row[data-rank="2"] { border-color: #a0a8b840; background: linear-gradient(135deg,#a0a8b808,var(--surface2)); }
+  .lb-row[data-rank="3"] { border-color: #cd7f3240; background: linear-gradient(135deg,#cd7f3208,var(--surface2)); }
+  .lb-row[data-rank="0"] { border-color: var(--border); background: var(--surface2); }
+
+  /* Mobile card top row: rank + name + badge */
+  .lb-card-top {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
+  }
+
+  /* Mobile card bottom row: stats */
+  .lb-card-stats {
+    display: grid; grid-template-columns: repeat(3,1fr);
+    gap: 6px; padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .lb-card-stat { text-align: center; }
+  .lb-card-stat-val { font-family: var(--font-display); font-size: 14px; font-weight: 700; color: #fff; }
+  .lb-card-stat-val.blocked { color: var(--red); }
+  .lb-card-stat-label { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; margin-top: 2px; }
+
+  /* Switch to grid layout on tablet+ */
+  @media(min-width:560px){
+    .lb-row {
+      display: grid;
+      grid-template-columns: 40px 1fr 110px 90px;
+      gap: 8px; align-items: center;
+      flex-direction: unset;
+      padding: 10px;
+      border: none; border-radius: 10px;
+      margin-bottom: 0; background: transparent;
+    }
+    .lb-row:hover { background: var(--surface2); transform: translateX(2px); }
+    .lb-row.is-you { border: 1px solid var(--blue); background: var(--blue-dim) !important; }
+    .lb-row[data-rank="1"] { background: linear-gradient(90deg,#ffcc4406,transparent); border: none; }
+    .lb-row[data-rank="2"] { background: linear-gradient(90deg,#a0a8b806,transparent); border: none; }
+    .lb-row[data-rank="3"] { background: linear-gradient(90deg,#cd7f3206,transparent); border: none; }
+    .lb-row[data-rank="0"] { background: transparent; border: none; }
+    .lb-card-top { display: contents; }
+    .lb-card-stats { display: contents; }
+    .lb-card-stat { display: contents; }
+    .lb-card-stat-val { display: none; }
+    .lb-card-stat-label { display: none; }
+  }
+  @media(min-width:860px){
+    .lb-row { grid-template-columns: 44px 1fr 140px 110px 110px 90px; }
+  }
+
+  .lb-rank {
+    width: 30px; height: 30px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-display); font-size: 13px; font-weight: 800;
+    border: 1px solid var(--border); color: var(--text-dim);
+    background: var(--surface); flex-shrink: 0;
+  }
+  .lb-row[data-rank="1"] .lb-rank { background: linear-gradient(135deg,#b8860020,#ffcc4420); border-color:#ffcc44; color:#ffcc44; font-size:15px; }
+  .lb-row[data-rank="2"] .lb-rank { background: linear-gradient(135deg,#87878720,#c0c0c020); border-color:#a0a8b8; color:#a0a8b8; }
+  .lb-row[data-rank="3"] .lb-rank { background: linear-gradient(135deg,#8b451320,#cd7f3220); border-color:#cd7f32; color:#cd7f32; }
+
+  .lb-device { min-width: 0; flex: 1; }
+  .lb-hostname { font-size: 13px; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lb-ip { font-size: 10px; color: var(--text-dim); margin-top: 2px; }
+  .you-tag {
+    display: inline-block; font-size: 9px; font-weight: 700;
+    background: var(--blue-dim); border: 1px solid var(--blue); color: var(--blue);
+    padding: 1px 5px; border-radius: 4px; margin-left: 5px;
+    text-transform: uppercase; letter-spacing: 1px; vertical-align: middle;
+  }
+
+  /* Grid-mode columns (tablet+) */
+  .lb-mac { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  @media(max-width:859px){.lb-mac{display:none}}
+
+  .lb-blocked-wrap {}
+  .lb-blocked-num { font-family: var(--font-display); font-size: 14px; font-weight: 700; color: var(--red); line-height: 1; }
+  .lb-mini-bar { height: 3px; background: var(--border); border-radius: 2px; margin-top: 4px; overflow: hidden; }
+  .lb-mini-fill { height: 100%; background: linear-gradient(90deg,var(--red),var(--yellow)); border-radius: 2px; transition: width .8s ease; }
+  @media(max-width:559px){ .lb-blocked-wrap { display: none; } }
+
+  .lb-total { font-size: 12px; color: var(--text); }
+  @media(max-width:559px){ .lb-total { display: none; } }
+
+  .lb-rate {
+    display: inline-flex; align-items: center;
+    padding: 3px 8px; border-radius: 20px;
+    font-size: 11px; font-weight: 700; border: 1px solid;
+  }
+  .lb-rate.high   { background: var(--red-dim);    border-color: var(--red);    color: var(--red); }
+  .lb-rate.medium { background: var(--yellow-dim); border-color: var(--yellow); color: var(--yellow); }
+  .lb-rate.low    { background: var(--green-dim);  border-color: var(--green);  color: var(--green); }
+  @media(max-width:859px){ .lb-rate { display: none; } }
+
+  .lb-empty { text-align: center; padding: 36px 20px; color: var(--text-dim); font-size: 13px; }
+  .lb-empty .icon { font-size: 28px; margin-bottom: 10px; }
+
+  /* ── Block-rate bar ──────────────────────────────────────────────────────── */
+  .block-bar-container {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px; margin-bottom: 16px;
+    animation: fadeUp .5s .22s ease both;
+  }
+  @media(min-width:600px){ .block-bar-container { padding: 20px; } }
+  .block-bar-header { display:flex; justify-content:space-between; margin-bottom:10px; font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; }
+  .block-bar-track  { height:8px; background:var(--border); border-radius:4px; overflow:hidden; }
+  .block-bar-fill   { height:100%; background:linear-gradient(90deg,var(--green),var(--yellow)); border-radius:4px; transition:width 1s ease; width:0%; }
+
+  /* ── Timeline ────────────────────────────────────────────────────────────── */
+  .timeline-panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px; margin-bottom: 16px;
+    animation: fadeUp .5s .26s ease both;
+  }
+  @media(min-width:600px){ .timeline-panel { padding: 20px; } }
+  .panel-title {
+    font-size:10px; text-transform:uppercase; letter-spacing:2px;
+    color:var(--text-dim); margin-bottom:14px; padding-bottom:10px;
+    border-bottom:1px solid var(--border);
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  @media(min-width:600px){ .panel-title { font-size:11px; } }
+  .panel-title span { color: var(--green); font-weight: 600; }
+  canvas#timeline { width:100%; height:130px; display:block; }
+  @media(min-width:600px){ canvas#timeline { height:160px; } }
+
+  /* ── Two-col ─────────────────────────────────────────────────────────────── */
+  .two-col { display:grid; grid-template-columns:1fr; gap:12px; margin-bottom:16px; }
+  @media(min-width:700px){ .two-col { grid-template-columns:1fr 1fr; gap:16px; } }
+
+  .panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; padding: 16px;
+    animation: fadeUp .5s .3s ease both;
+  }
+  @media(min-width:600px){ .panel { padding: 20px; } }
+
+  .list-item {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:8px 0; border-bottom:1px solid var(--border);
+    font-size:12px; gap:8px;
+  }
+  .list-item:last-child{border-bottom:none}
+  .list-domain{color:var(--text);flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;}
+  .list-bar-wrap{display:flex;align-items:center;gap:6px;flex-shrink:0}
+  .list-bar{width:40px;height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+  @media(min-width:480px){ .list-bar { width: 60px; } }
+  .list-bar-fill{height:100%;background:var(--green);border-radius:2px;transition:width .8s ease}
+  .list-item.blocked .list-bar-fill{background:var(--red)}
+  .list-count{color:var(--text-dim);font-size:11px;min-width:30px;text-align:right}
+
+  /* ── Debug panel ─────────────────────────────────────────────────────────── */
+  .debug-panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 14px; margin-top: 20px; overflow: hidden;
+    animation: fadeUp .5s .35s ease both;
+  }
+  .debug-toggle {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; cursor: pointer; user-select: none;
+    transition: background .15s; -webkit-tap-highlight-color: transparent;
+  }
+  .debug-toggle:hover { background: var(--surface2); }
+  .debug-toggle-left { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 2px; }
+  .debug-toggle-left .icon { font-size: 13px; }
+  .debug-chevron { font-size: 12px; color: var(--text-dim); transition: transform .2s; }
+  .debug-panel.open .debug-chevron { transform: rotate(180deg); }
+  .debug-body { display: none; padding: 0 16px 16px; border-top: 1px solid var(--border); }
+  .debug-panel.open .debug-body { display: block; }
+  .debug-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 8px; margin-top: 14px;
+  }
+  @media(min-width:600px){ .debug-grid { grid-template-columns: repeat(auto-fill,minmax(240px,1fr)); gap:12px; } }
+  .debug-entry { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+  .debug-key { font-size: 9px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 4px; }
+  .debug-val { font-size: 11px; color: var(--text); word-break: break-all; line-height: 1.4; }
+  .debug-val.ok    { color: var(--green); }
+  .debug-val.warn  { color: var(--yellow); }
+  .debug-val.error { color: var(--red); }
+  .debug-raw { margin-top:12px; background:var(--bg); border:1px solid var(--border); border-radius:8px; padding:12px; font-size:10px; color:var(--text-dim); max-height:220px; overflow-y:auto; white-space:pre-wrap; word-break:break-all; line-height:1.6; }
+  .debug-raw-label { font-size:9px; text-transform:uppercase; letter-spacing:1.5px; color:var(--text-dim); margin-top:14px; margin-bottom:5px; }
+
+  /* ── Helpers ─────────────────────────────────────────────────────────────── */
+  .state-msg{text-align:center;padding:30px 16px;color:var(--text-dim);font-size:12px}
+  .state-msg .icon{font-size:26px;margin-bottom:8px}
+  .skeleton {
+    background: linear-gradient(90deg,var(--surface2) 25%,var(--border) 50%,var(--surface2) 75%);
+    background-size:200% 100%; animation:shimmer 1.4s infinite;
+    border-radius:6px; height:28px; width:70%;
+  }
+  @keyframes shimmer{to{background-position:-200% 0}}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+  footer{text-align:center;font-size:10px;color:var(--text-dim);padding-top:20px;border-top:1px solid var(--border);letter-spacing:1px;margin-top:20px;line-height:1.8;}
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Header ── -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🕳️</div>
+      <div>
+        <h1>Pi-hole</h1>
+        <span>Network Monitor</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="last-updated" id="lastUpdated"></span>
+      <div class="refresh-ring" title="Click to refresh now" onclick="triggerRefresh()">
+        <svg width="34" height="34" viewBox="0 0 36 36">
+          <circle class="track" cx="18" cy="18" r="14"/>
+          <circle class="prog"  cx="18" cy="18" r="14" id="ringProg"/>
+        </svg>
+        <div class="ring-icon">↻</div>
+      </div>
+      <div id="statusPill" class="status-pill loading">
+        <div class="status-dot"></div>
+        <span id="statusText">Connecting…</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══════════════ SECTION 1 — YOUR DEVICE ═══════════════ -->
+  <div class="section-label">Your Device</div>
+
+  <div class="your-device-panel" id="yourDevicePanel">
+    <!-- Top row: avatar + name + rank badge -->
+    <div class="yd-top">
+      <div class="yd-left">
+        <div class="yd-avatar">💻</div>
+        <div>
+          <div class="yd-name" id="ydHostname"><div class="skeleton" style="height:18px;width:120px"></div></div>
+          <div class="yd-ip" id="ydIp">Detecting…</div>
+        </div>
+      </div>
+      <div class="yd-rank-badge" id="ydRankBadge" title="Your leaderboard position">—</div>
+    </div>
+    <!-- Stats row -->
+    <div class="yd-stats">
+      <div class="yd-stat">
+        <div class="yd-stat-val" id="ydBlocked">—</div>
+        <div class="yd-stat-label">Blocked</div>
+      </div>
+      <div class="yd-stat">
+        <div class="yd-stat-val" id="ydTotal">—</div>
+        <div class="yd-stat-label">Total</div>
+      </div>
+      <div class="yd-stat">
+        <div class="yd-stat-val" id="ydRate">—</div>
+        <div class="yd-stat-label">Block %</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ SECTION 2 — LEADERBOARD ═══════════════ -->
+  <div class="section-label">Device Leaderboard</div>
+
+  <div class="leaderboard-panel">
+    <div class="lb-header">
+      <div>
+        <div class="lb-title"><span class="trophy">🏆</span> Ranked by Ads Blocked</div>
+        <div class="lb-subtitle">Updates every 15s · you are highlighted in blue</div>
+      </div>
+      <div class="lb-badge" id="lbDeviceCount">— devices</div>
+    </div>
+    <!-- Column headers (tablet+) -->
+    <div class="lb-cols">
+      <div>#</div>
+      <div>Device</div>
+      <div class="lb-col-mac">MAC</div>
+      <div>Blocked</div>
+      <div class="lb-col-total">Total</div>
+      <div class="lb-col-rate">Block %</div>
+    </div>
+    <div id="lbRows">
+      <div class="lb-empty"><div class="icon">⏳</div>Loading leaderboard…</div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ SECTION 3 — OVERALL ═══════════════ -->
+  <div class="section-label">Overall</div>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-label">Total Queries</div>
+      <div class="stat-value" id="valQueries"><div class="skeleton"></div></div>
+      <div class="stat-sub">today</div>
+      <div class="stat-icon">📊</div>
+    </div>
+    <div class="stat-card blocked">
+      <div class="stat-label">Ads Blocked</div>
+      <div class="stat-value" id="valBlocked"><div class="skeleton"></div></div>
+      <div class="stat-sub">queries blocked</div>
+      <div class="stat-icon">🚫</div>
+    </div>
+    <div class="stat-card percent">
+      <div class="stat-label">Block Rate</div>
+      <div class="stat-value" id="valPercent"><div class="skeleton"></div></div>
+      <div class="stat-sub">of all DNS queries</div>
+      <div class="stat-icon">📈</div>
+    </div>
+    <div class="stat-card domains">
+      <div class="stat-label">Blocklist</div>
+      <div class="stat-value" id="valDomains"><div class="skeleton"></div></div>
+      <div class="stat-sub">blocked domains</div>
+      <div class="stat-icon">📋</div>
+    </div>
+  </div>
+
+  <div class="block-bar-container">
+    <div class="block-bar-header">
+      <span>Overall Block Rate</span>
+      <span id="barPercent">—</span>
+    </div>
+    <div class="block-bar-track">
+      <div class="block-bar-fill" id="blockBarFill"></div>
+    </div>
+  </div>
+
+  <div class="timeline-panel">
+    <div class="panel-title">
+      DNS Queries Over Time
+      <span id="timelineStatus">loading…</span>
+    </div>
+    <canvas id="timeline"></canvas>
+  </div>
+
+  <div class="two-col">
+    <div class="panel">
+      <div class="panel-title">Top Blocked Domains <span id="blockedCount">—</span></div>
+      <div id="topBlocked">
+        <div class="state-msg"><div class="skeleton" style="height:11px;margin-bottom:8px"></div><div class="skeleton" style="height:11px;width:55%;margin-bottom:8px"></div><div class="skeleton" style="height:11px;width:70%"></div></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Top Allowed Domains <span id="allowedCount">—</span></div>
+      <div id="topAllowed">
+        <div class="state-msg"><div class="skeleton" style="height:11px;margin-bottom:8px"></div><div class="skeleton" style="height:11px;width:55%;margin-bottom:8px"></div><div class="skeleton" style="height:11px;width:70%"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════ DEBUG ═══════════════ -->
+  <div class="debug-panel" id="debugPanel">
+    <div class="debug-toggle" onclick="toggleDebug()">
+      <div class="debug-toggle-left"><span class="icon">🛠</span> Debug Information</div>
+      <span class="debug-chevron" id="debugChevron">▼</span>
+    </div>
+    <div class="debug-body" id="debugBody">
+      <div class="debug-grid" id="debugGrid"></div>
+      <div class="debug-raw-label">Last API Responses</div>
+      <div class="debug-raw" id="debugRaw">No data yet.</div>
+    </div>
+  </div>
+
+  <footer>
+    Pi-hole Dashboard &nbsp;·&nbsp; Token handled server-side &nbsp;·&nbsp; Refreshes every 15s
+  </footer>
+</div>
+
+<script>
+const PROXY       = window.location.origin;
+const REFRESH_S   = 15;
+const CIRCUMFERENCE = 2 * Math.PI * 14;
+
+const ringProg = document.getElementById('ringProg');
+let countdownVal = REFRESH_S;
+let countdownInt = null;
+let refreshTimer = null;
+let myIp = null;
+const debugLog = {};
+
+function startCountdown() {
+  countdownVal = REFRESH_S;
+  ringProg.style.strokeDashoffset = 0;
+  clearInterval(countdownInt);
+  countdownInt = setInterval(() => {
+    countdownVal = Math.max(0, countdownVal - 1);
+    ringProg.style.strokeDashoffset = CIRCUMFERENCE * (1 - countdownVal / REFRESH_S);
+  }, 1000);
+}
+
+function triggerRefresh() {
+  clearTimeout(refreshTimer); clearInterval(countdownInt); loadAll();
+}
+
+async function get(path) {
+  const res = await fetch(PROXY + path);
+  if (!res.ok) throw new Error(`HTTP ${res.status} from ${path}`);
+  return res.json();
+}
+
+function fmt(n) { return (n == null) ? '—' : Number(n).toLocaleString(); }
+
+function setStatus(state, text) {
+  document.getElementById('statusPill').className = 'status-pill ' + state;
+  document.getElementById('statusText').textContent = text;
+}
+
+function showProxyNotice(ok, msg) {
+  debugLog._proxyOk = ok; debugLog._proxyMsg = msg;
+}
+
+function escHtml(s) {
+  if (!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function setListMsg(id, icon, msg) {
+  document.getElementById(id).innerHTML = `<div class="state-msg"><div class="icon">${icon}</div>${msg}</div>`;
+}
+
+function toggleDebug() { document.getElementById('debugPanel').classList.toggle('open'); }
+
+function updateDebug(entries, rawObj) {
+  document.getElementById('debugGrid').innerHTML = entries.map(([key,val,cls]) =>
+    `<div class="debug-entry"><div class="debug-key">${escHtml(key)}</div><div class="debug-val ${cls||''}">${escHtml(String(val))}</div></div>`
+  ).join('');
+  document.getElementById('debugRaw').textContent = JSON.stringify(rawObj, null, 2);
+}
+
+// ─── Your Device ──────────────────────────────────────────────────────────────
+function updateYourDevice(whoami, lbData) {
+  const ip       = whoami?.ip       || null;
+  const hostname = whoami?.hostname || null;
+  document.getElementById('ydIp').textContent       = ip       || 'Unknown IP';
+  document.getElementById('ydHostname').textContent  = hostname || ip || 'Unknown Device';
+
+  if (!lbData?.leaderboard?.length || !ip) {
+    ['ydBlocked','ydTotal','ydRate'].forEach(id => document.getElementById(id).textContent = '—');
+    document.getElementById('ydRankBadge').textContent = '?';
+    return;
+  }
+
+  const rank  = lbData.leaderboard.findIndex(e => e.ip === ip) + 1;
+  const entry = lbData.leaderboard.find(e => e.ip === ip);
+
+  if (entry) {
+    document.getElementById('ydBlocked').textContent = fmt(entry.blocked);
+    document.getElementById('ydTotal').textContent   = fmt(entry.total);
+    document.getElementById('ydRate').textContent    = entry.blockRate + '%';
+    const valEl = document.getElementById('ydBlocked');
+    valEl.className = 'yd-stat-val' + (rank===1?' rank-1':rank===2?' rank-2':rank===3?' rank-3':'');
+  } else {
+    ['ydBlocked','ydTotal','ydRate'].forEach(id => document.getElementById(id).textContent = '0');
+  }
+
+  const rankEmoji = rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':`#${rank}`;
+  document.getElementById('ydRankBadge').textContent = rank > 0 ? rankEmoji : '—';
+}
+
+// ─── Leaderboard ─────────────────────────────────────────────────────────────
+let prevRanks = {};
+
+function renderLeaderboard(data) {
+  const { leaderboard } = data;
+  document.getElementById('lbDeviceCount').textContent =
+    `${leaderboard.length} device${leaderboard.length!==1?'s':''}`;
+
+  if (!leaderboard.length) {
+    document.getElementById('lbRows').innerHTML =
+      '<div class="lb-empty"><div class="icon">📡</div>No client data yet.</div>';
+    return;
+  }
+
+  const maxBlocked = leaderboard[0].blocked || 1;
+  const newRanks = {};
+  let html = '';
+
+  leaderboard.forEach((entry, i) => {
+    const rank  = i + 1;
+    newRanks[entry.ip] = rank;
+    const prev  = prevRanks[entry.ip];
+    const isYou = entry.ip === myIp;
+
+    let arrow = '';
+    if (prev !== undefined && prev !== rank) {
+      arrow = prev > rank
+        ? `<span style="color:var(--green);font-size:9px;margin-left:3px">▲${prev-rank}</span>`
+        : `<span style="color:var(--red);font-size:9px;margin-left:3px">▼${rank-prev}</span>`;
+    }
+
+    const medal    = rank===1?'🥇':rank===2?'🥈':rank===3?'🥉':rank;
+    const barPct   = ((entry.blocked/maxBlocked)*100).toFixed(1);
+    const hostname = entry.hostname || entry.ip;
+    const ipLine   = entry.hostname ? entry.ip : '';
+    const mac      = entry.mac || '—';
+    const rateClass = entry.blockRate>=30?'high':entry.blockRate>=10?'medium':'low';
+    const youTag   = isYou ? '<span class="you-tag">You</span>' : '';
+
+    html += `
+      <div class="lb-row ${isYou?'is-you':''}" data-rank="${rank<=3?rank:0}">
+        <!-- mobile card top / tablet rank cell -->
+        <div class="lb-card-top">
+          <div class="lb-rank">${medal}</div>
+          <div class="lb-device">
+            <div class="lb-hostname">${escHtml(hostname)}${youTag}${arrow}</div>
+            ${ipLine?`<div class="lb-ip">${escHtml(ipLine)}</div>`:''}
+          </div>
+          <div class="lb-mac">${escHtml(mac)}</div>
+        </div>
+        <!-- tablet+ grid cells -->
+        <div class="lb-blocked-wrap">
+          <div class="lb-blocked-num">${fmt(entry.blocked)}</div>
+          <div class="lb-mini-bar"><div class="lb-mini-fill" style="width:${barPct}%"></div></div>
+        </div>
+        <div class="lb-total">${fmt(entry.total)}</div>
+        <div><span class="lb-rate ${rateClass}">${entry.blockRate}%</span></div>
+        <!-- mobile card stats -->
+        <div class="lb-card-stats">
+          <div class="lb-card-stat">
+            <div class="lb-card-stat-val blocked">${fmt(entry.blocked)}</div>
+            <div class="lb-card-stat-label">Blocked</div>
+          </div>
+          <div class="lb-card-stat">
+            <div class="lb-card-stat-val">${fmt(entry.total)}</div>
+            <div class="lb-card-stat-label">Total</div>
+          </div>
+          <div class="lb-card-stat">
+            <div class="lb-card-stat-val"><span class="lb-rate ${rateClass}" style="font-size:12px;padding:2px 7px">${entry.blockRate}%</span></div>
+            <div class="lb-card-stat-label">Block %</div>
+          </div>
+        </div>
+      </div>`;
+  });
+
+  document.getElementById('lbRows').innerHTML = html;
+  prevRanks = newRanks;
+}
+
+// ─── Domain list ──────────────────────────────────────────────────────────────
+function renderList(containerId, data, isBlocked) {
+  const el = document.getElementById(containerId);
+  if (!data || !Object.keys(data).length) {
+    el.innerHTML = '<div class="state-msg"><div class="icon">💤</div>No data yet</div>';
+    return;
+  }
+  const entries = Object.entries(data).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  const max = entries[0][1];
+  el.innerHTML = entries.map(([domain,count]) => `
+    <div class="list-item ${isBlocked?'blocked':''}">
+      <div class="list-domain" title="${escHtml(domain)}">${escHtml(domain)}</div>
+      <div class="list-bar-wrap">
+        <div class="list-bar"><div class="list-bar-fill" style="width:${(count/max*100).toFixed(0)}%"></div></div>
+        <div class="list-count">${fmt(count)}</div>
+      </div>
+    </div>`).join('');
+}
+
+// ─── Timeline ─────────────────────────────────────────────────────────────────
+function drawTimeline(data) {
+  const canvas = document.getElementById('timeline');
+  const ctx    = canvas.getContext('2d');
+  const dpr    = window.devicePixelRatio || 1;
+  const rect   = canvas.getBoundingClientRect();
+  canvas.width  = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+
+  const W = rect.width, H = rect.height;
+  const queries = Object.values(data.domains_over_time || {});
+  const blocked = Object.values(data.ads_over_time    || {});
+  if (!queries.length) return;
+
+  const maxVal = Math.max(...queries, 1);
+  const pts    = queries.length;
+  const padL=6, padR=6, padT=8, padB=20;
+  const gW = W-padL-padR, gH = H-padT-padB;
+
+  ctx.clearRect(0,0,W,H);
+  ctx.strokeStyle='rgba(30,42,74,0.8)'; ctx.lineWidth=1;
+  for(let i=0;i<=4;i++){const y=padT+(gH/4)*i;ctx.beginPath();ctx.moveTo(padL,y);ctx.lineTo(W-padR,y);ctx.stroke();}
+
+  function drawArea(vals, strokeColor, c0, c1) {
+    if (!vals.length) return;
+    const p = vals.map((v,i)=>({x:padL+(i/(pts-1))*gW, y:padT+gH-(v/maxVal)*gH}));
+    const grad = ctx.createLinearGradient(0,padT,0,padT+gH);
+    grad.addColorStop(0,c0); grad.addColorStop(1,c1);
+    ctx.beginPath(); ctx.moveTo(p[0].x,p[0].y);
+    for(let i=1;i<p.length;i++) ctx.lineTo(p[i].x,p[i].y);
+    ctx.lineTo(p[p.length-1].x,padT+gH); ctx.lineTo(p[0].x,padT+gH); ctx.closePath();
+    ctx.fillStyle=grad; ctx.fill();
+    ctx.beginPath(); ctx.moveTo(p[0].x,p[0].y);
+    for(let i=1;i<p.length;i++) ctx.lineTo(p[i].x,p[i].y);
+    ctx.strokeStyle=strokeColor; ctx.lineWidth=2; ctx.stroke();
+  }
+
+  drawArea(queries,'#4488ff','rgba(68,136,255,0.35)','rgba(68,136,255,0)');
+  if(blocked.length) drawArea(blocked,'#ff4455','rgba(255,68,85,0.4)','rgba(255,68,85,0)');
+  ctx.font=`${Math.min(11, Math.max(9, Math.floor(W/80)))}px JetBrains Mono,monospace`;
+  ctx.fillStyle='#4488ff'; ctx.fillText('▬ queries',padL,H-4);
+  ctx.fillStyle='#ff4455'; ctx.fillText('▬ blocked',padL+70,H-4);
+}
+
+// ─── Main loader ──────────────────────────────────────────────────────────────
+async function loadAll() {
+  setStatus('loading','Connecting…');
+  startCountdown();
+
+  const debugEntries = [];
+  const debugRaw     = {};
+
+  try {
+    const status = await get('/api/status');
+    debugRaw.status = status;
+    debugEntries.push(
+      ['Proxy',         'OK',                                      'ok'],
+      ['Pi-hole URL',   status.pihole,                             ''],
+      ['Pi-hole ver',   status.piholeVersion || 'v6',              ''],
+      ['Authenticated', status.authenticated ? 'Yes' : 'No',      status.authenticated?'ok':'warn'],
+      ['Checked at',    new Date().toLocaleTimeString(),           ''],
+    );
+    showProxyNotice(true, status.authenticated
+      ? '🔑 Authenticated with Pi-hole v6'
+      : '⚠️ Not authenticated — check password file');
+    debugEntries.push(
+      ['Proxy status',  debugLog._proxyOk?'OK':'Error',           debugLog._proxyOk?'ok':'error'],
+      ['Auth message',  debugLog._proxyMsg||'—',                  debugLog._proxyOk?'ok':'warn'],
+    );
+
+    let whoami = null;
+    try {
+      whoami = await get('/api/whoami');
+      myIp   = whoami.ip;
+      debugRaw.whoami = whoami;
+      debugEntries.push(
+        ['Your IP',       whoami.ip       || '—', ''],
+        ['Your Hostname', whoami.hostname || '(none in DHCP)', whoami.hostname?'':'warn'],
+        ['Your MAC',      whoami.mac      || '(none in DHCP)', whoami.mac?'':'warn'],
+      );
+    } catch(e) { debugEntries.push(['Whoami error', e.message, 'error']); }
+
+    const [summary, ot, top, lb] = await Promise.allSettled([
+      get('/api/summary'), get('/api/overtime'), get('/api/top'), get('/api/leaderboard'),
+    ]);
+
+    if (summary.status === 'fulfilled') {
+      const s = summary.value;
+      debugRaw.summary = s;
+      document.getElementById('valQueries').textContent = fmt(s.dns_queries_today);
+      document.getElementById('valBlocked').textContent = fmt(s.ads_blocked_today);
+      const pct = parseFloat(s.ads_percentage_today||0).toFixed(1);
+      document.getElementById('valPercent').textContent = pct+'%';
+      document.getElementById('valDomains').textContent = fmt(s.domains_being_blocked);
+      document.getElementById('barPercent').textContent = pct+'%';
+      document.getElementById('blockBarFill').style.width = Math.min(pct,100)+'%';
+      const isEnabled = s.status === 'enabled';
+      setStatus('online', isEnabled ? 'Enabled' : 'Disabled');
+      debugEntries.push(
+        ['Pi-hole status',  s.status,                   isEnabled?'ok':'warn'],
+        ['Total queries',   fmt(s.dns_queries_today),   ''],
+        ['Blocked queries', fmt(s.ads_blocked_today),   ''],
+        ['Block %',         pct+'%',                    ''],
+        ['Blocklist size',  fmt(s.domains_being_blocked),''],
+      );
+    } else { debugEntries.push(['Summary error', summary.reason?.message||'?', 'error']); }
+
+    if (ot.status === 'fulfilled') {
+      debugRaw.overtime = {points: Object.keys(ot.value.domains_over_time||{}).length};
+      drawTimeline(ot.value);
+      document.getElementById('timelineStatus').textContent = 'live';
+      debugEntries.push(['Timeline points', debugRaw.overtime.points, '']);
+    } else {
+      document.getElementById('timelineStatus').textContent = 'unavailable';
+      debugEntries.push(['Timeline error', ot.reason?.message||'?', 'error']);
+    }
+
+    if (top.status === 'fulfilled') {
+      renderList('topBlocked', top.value.top_ads,     true);
+      renderList('topAllowed', top.value.top_queries, false);
+      const bc = Object.keys(top.value.top_ads    ||{}).length;
+      const ac = Object.keys(top.value.top_queries||{}).length;
+      document.getElementById('blockedCount').textContent = bc;
+      document.getElementById('allowedCount').textContent = ac;
+      debugEntries.push(['Top blocked', bc, ''], ['Top allowed', ac, '']);
+    } else {
+      setListMsg('topBlocked','⚠️','Could not load');
+      setListMsg('topAllowed','⚠️','Could not load');
+      debugEntries.push(['Top domains error', top.reason?.message||'?', 'error']);
+    }
+
+    if (lb.status === 'fulfilled') {
+      debugRaw.leaderboard = {count: lb.value.leaderboard.length, dhcp: lb.value.dhcpAvailable};
+      renderLeaderboard(lb.value);
+      updateYourDevice(whoami, lb.value);
+      debugEntries.push(
+        ['Leaderboard devices', lb.value.leaderboard.length, ''],
+        ['DHCP leases loaded',  lb.value.dhcpAvailable?'Yes':'No', lb.value.dhcpAvailable?'ok':'warn'],
+      );
+    } else {
+      document.getElementById('lbRows').innerHTML =
+        `<div class="lb-empty"><div class="icon">⚠️</div>${lb.reason?.message||'Unavailable'}</div>`;
+      updateYourDevice(whoami, null);
+      debugEntries.push(['Leaderboard error', lb.reason?.message||'?', 'error']);
+    }
+
+    document.getElementById('lastUpdated').textContent = 'Updated '+new Date().toLocaleTimeString();
+
+  } catch (err) {
+    setStatus('offline','Error');
+    debugLog._proxyOk  = false;
+    debugLog._proxyMsg = err.message;
+    debugEntries.push(['Proxy status','Unreachable','error'],['Error detail',err.message,'error']);
+    document.getElementById('debugPanel').classList.add('open');
+    ['valQueries','valBlocked','valPercent','valDomains'].forEach(id => {
+      document.getElementById(id).innerHTML = '<span style="color:var(--red);font-size:14px">—</span>';
+    });
+  }
+
+  updateDebug(debugEntries, debugRaw);
+  clearTimeout(refreshTimer);
+  refreshTimer = setTimeout(loadAll, REFRESH_S * 1000);
+}
+
+window.addEventListener('resize', () => {
+  fetch(PROXY+'/api/overtime').then(r=>r.json()).then(drawTimeline).catch(()=>{});
+});
+
+loadAll();
+</script>
+</body>
+</html>
